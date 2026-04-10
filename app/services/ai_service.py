@@ -5,6 +5,7 @@ from groq import Groq
 from twilio.rest import Client
 from services.product_service import get_all_products, get_product_by_id,search_products
 from services.cart_service import get_user_cart, add_to_cart, clear_cart
+from services.order_service import create_order, get_recent_order
 
 
 # --- SESSION TRACKER ---
@@ -64,19 +65,43 @@ def process_message(sender, user_input, user_name="Friend"):
         if not cart["items"]:
             return {"text": "Your cart is empty! Nothing to checkout yet.", "image": None}
         
-        # In a real app, this is where you'd integrate Razorpay/Stripe.
-        # For now, we confirm the order and clear the cart.
         total = cart["total"]
+        
+        # Save the order to MongoDB!
+        order_id = create_order(sender, cart["items"], total)
+        
+        # Now clear the cart
         clear_cart(sender)
         
         confirm_msg = (
             f"🎉 *ORDER SUCCESSFUL, {user_name}!* \n\n"
-            f"Your order total of *₹{total}* has been received.\n"
-            "We will send your tracking link shortly. Thank you for shopping with AdaShop.24! ✨"
+            f"Order ID: {order_id[-6:].upper()}\n" # Display just the last 6 chars for a clean look
+            f"Your order total of *₹{total}* has been received.\n\n"
+            "Type *'Track Order'* anytime to see your shipping status! ✨"
         )
         return {"text": confirm_msg, "image": None}
+    
+    # --- 3. ORDER TRACKING LOGIC ---
+    if user_input in ["track order", "track", "status", "where is my order"]:
+        recent_order = get_recent_order(sender)
+        
+        if not recent_order:
+            return {"text": "I couldn't find any recent orders for your number. Have you shopped with us before? 🛍️", "image": None}
 
-    # --- 3. ADD TO CART LOGIC ---
+        # Format the items neatly
+        items_str = ", ".join([item['name'] for item in recent_order['items']])
+        status = recent_order.get('status', 'Processing')
+        
+        msg = (
+            f"📦 *Order Status Update*\n\n"
+            f"Items: {items_str}\n"
+            f"Total: ₹{recent_order['total']}\n"
+            f"Current Status: *{status}* 🚚\n\n"
+            "We'll notify you when it's out for delivery!"
+        )
+        return {"text": msg, "image": None}
+
+    # --- 4. ADD TO CART LOGIC ---
     if user_input == "add":
         last_product_id = user_sessions.get(sender)
         if last_product_id:
@@ -92,7 +117,7 @@ def process_message(sender, user_input, user_name="Friend"):
         else:
             return {"text": "Oops! Which item did you want to add? Please view an item by its ID first.", "image": None}
 
-    # --- 4. PRODUCT DETECTION LOGIC ---
+    # --- 5. PRODUCT DETECTION LOGIC ---
     match = re.search(r'[a-f0-9]{24}', user_input)
     if match:
         product_id = match.group()
@@ -109,7 +134,7 @@ def process_message(sender, user_input, user_name="Friend"):
             )
             return {"text": response_text, "image": product.get('image_url')}
 
-    # --- 5. START/MENU LOGIC ---
+    # --- 6. START/MENU LOGIC ---
     if user_input in ["hi", "hello", "hey", "start", "menu"]:
         products = get_all_products()
         featured_images = [p["image_url"] for p in products if p.get("image_url")][:4]
@@ -122,7 +147,7 @@ def process_message(sender, user_input, user_name="Friend"):
         )
         return {"text": msg, "image": featured_images}
 
-    # --- 6. AI (GROQ) LOGIC ---
+    # --- 7. AI (GROQ) LOGIC ---
     products = get_all_products()
     inventory_str = "\n".join([f"- {p['name']} (ID: {p['id']}): {p['price']}" for p in products])
     
