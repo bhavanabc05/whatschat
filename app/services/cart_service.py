@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
@@ -19,7 +20,6 @@ def get_user_cart(sender):
 
 def add_to_cart(sender, product):
     """Adds a product to the user's cart and updates the total."""
-    # Clean the price string (e.g., "₹1499" -> 1499) to do math
     price_str = str(product.get("price", "0"))
     numeric_price = int(''.join(filter(str.isdigit, price_str)) or 0)
 
@@ -29,11 +29,13 @@ def add_to_cart(sender, product):
         "price": numeric_price
     }
 
+    # Update the cart AND set the 'updated_at' timestamp
     carts_collection.update_one(
         {"sender": sender},
         {
             "$push": {"items": item},
-            "$inc": {"total": numeric_price}
+            "$inc": {"total": numeric_price},
+            "$set": {"updated_at": datetime.utcnow()} # <-- Add this line
         },
         upsert=True
     )

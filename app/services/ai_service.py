@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import requests
 from groq import Groq
 from twilio.rest import Client
 from services.product_service import get_all_products, get_product_by_id,search_products
@@ -39,6 +40,33 @@ def send_whatsapp_message(to, text, image_url=None):
         print(f"✅ Twilio Success! SID: {message.sid}")
     except Exception as e:
         print(f"❌ Twilio Error: {e}")
+
+def transcribe_audio(media_url):
+    """Downloads audio from Twilio and transcribes it using Groq."""
+    try:
+        # 1. Download the audio file from Twilio (requires auth)
+        response = requests.get(media_url, auth=(account_sid, auth_token))
+        
+        if response.status_code == 200:
+            # 2. Save it temporarily
+            temp_file = "temp_voice.ogg"
+            with open(temp_file, "wb") as f:
+                f.write(response.content)
+            
+            # 3. Send to Groq Whisper API
+            with open(temp_file, "rb") as file:
+                transcription = groq_client.audio.transcriptions.create(
+                  file=(temp_file, file.read()),
+                  model="whisper-large-v3",
+                )
+            
+            # 4. Clean up the temp file
+            os.remove(temp_file)
+            return transcription.text
+            
+    except Exception as e:
+        print(f"❌ Transcription Error: {e}")
+    return None
 
 def process_message(sender, user_input, user_name="Friend"):
     user_input = user_input.strip().lower()
@@ -154,16 +182,25 @@ def process_message(sender, user_input, user_name="Friend"):
     system_prompt = f"""
     You are Ada, a witty Gen-Z jewelry expert chatting with {user_name}.
     
-    CRITICAL INSTRUCTION FOR SEARCHING:
-    If the user asks to find, search, or look for products (e.g., "Do you have pearl necklaces under 2000?"), you MUST NOT reply with normal conversational text. 
-    Instead, you MUST extract the intent and output exactly this format:
+    CRITICAL SYSTEM OVERRIDE:
+    You are connected to a live database. Whenever the user expresses ANY interest in viewing, browsing, or finding jewelry (even vague requests), YOU MUST NOT reply with conversational text. 
+    You MUST trigger a search by replying ONLY with this exact format:
     [SEARCH] category: <item_type_or_any>, max_price: <number_or_any>
     
-    Examples:
-    User: "Show me rings under 500" -> Output: [SEARCH] category: ring, max_price: 500
-    User: "Do you have any gold chains?" -> Output: [SEARCH] category: gold chain, max_price: any
+    HOW TO RESPOND (EXAMPLES):
+    User: "Hi do you have bracelet collection?"
+    Output: [SEARCH] category: bracelet, max_price: any
     
-    If they are just chatting normally, making a joke, or asking about their bag, reply naturally as Ada.
+    User: "Show me few pieces from your catalog"
+    Output: [SEARCH] category: any, max_price: any
+    
+    User: "I am looking for pearl necklace"
+    Output: [SEARCH] category: pearl necklace, max_price: any
+    
+    User: "What's in my bag?"
+    Output: Type "Cart" to see your bag!
+    
+    Do NOT write introductory or conversational text if the user wants to see products. ONLY output the [SEARCH] string.
     """
 
     completion = groq_client.chat.completions.create(

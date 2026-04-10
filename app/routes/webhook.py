@@ -1,22 +1,40 @@
 from fastapi import APIRouter, Form
-from services.ai_service import process_message, send_whatsapp_message
+from services.ai_service import process_message, send_whatsapp_message, transcribe_audio
 
 router = APIRouter()
 
 @router.post("/webhook")
 async def webhook(
     From: str = Form(...), 
-    Body: str = Form(...),
-    ProfileName: str = Form("Friend")  # 1. Add ProfileName here
+    Body: str = Form(""), # Make this default to empty, since voice notes have no text body
+    ProfileName: str = Form("Friend"),
+    NumMedia: int = Form(0),              # Detects if media is attached
+    MediaContentType0: str = Form(""),    # Detects the type (e.g., audio/ogg)
+    MediaUrl0: str = Form("")             # The URL to the file
 ):
-    """
-    Handles incoming WhatsApp/Instagram messages from Twilio.
-    """
     try:
         sender_id = From.replace("whatsapp:", "").replace("messenger:", "")
-        message_body = Body
+        message_body = Body.strip()
 
-        # 2. Pass the ProfileName to your AI service
+        # --- 🎙️ VOICE NOTE LOGIC ---
+        if NumMedia > 0 and "audio" in MediaContentType0:
+            print(f"🎙️ Voice note received from {ProfileName}! Transcribing...")
+            
+            # Convert voice to text!
+            transcribed_text = transcribe_audio(MediaUrl0)
+            
+            if transcribed_text:
+                print(f"📝 Transcription: '{transcribed_text}'")
+                message_body = transcribed_text
+            else:
+                message_body = "Sorry, my ears are a bit blocked. Could you type that out? 😅"
+
+        # If they sent an image/video instead of text/audio, just ignore it for now
+        if not message_body:
+            return {"status": "success"}
+
+        # --- NORMAL PROCESSING ---
+        # Whether it was typed or spoken, it's just text now! Pass it to your AI.
         result = process_message(sender_id, message_body, ProfileName)
 
         send_whatsapp_message(
@@ -25,7 +43,7 @@ async def webhook(
             image_url=result.get('image')
         )
 
-        print(f"📩 Incoming from {ProfileName} ({sender_id}): {message_body}")
+        print(f"📩 Processed for {ProfileName}: {message_body}")
         
         return {"status": "success"}
 
