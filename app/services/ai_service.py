@@ -135,7 +135,7 @@ def send_whatsapp_message(to, text, image_url=None):
     except Exception as e:
         print(f"❌ Twilio Error: {e}")
 
-def process_message(sender, user_input):
+def process_message(sender, user_input,user_name="Friend"):
     user_input = user_input.strip().lower()
     
     # --- 1. ORDER CONFIRMATION LOGIC ---
@@ -179,7 +179,7 @@ def process_message(sender, user_input):
     # --- 3. START/MENU LOGIC ---
     if user_input in ["hi", "hello", "hey", "start"]:
         msg = (
-            "👋 *Welcome to AdaShop.24!* \n"
+            f"👋 *Welcome to AdaShop.24, {user_name}!* \n"
             "Your AI Jewelry Assistant is online. \n\n"
             "Just type the name or ID of the jewelry you want to see!"
         )
@@ -191,6 +191,7 @@ def process_message(sender, user_input):
     
     system_prompt = f"""
     You are Ada, a witty Gen-Z jewelry expert. 
+    You are currently chatting with a customer named {user_name}. Address them by their name naturally in your responses!
     If a user wants to buy something or see details, tell them to reply with the EXACT Product ID.
     Inventory: {inventory_str}
     """
