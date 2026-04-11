@@ -2,6 +2,7 @@ import os
 import sys
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from services.pdf_service import generate_invoice
 
 # Ensure we can import your existing Twilio function
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -47,15 +48,29 @@ def update_order_status():
     )
     print(f"✅ Database updated: Order {order_id_short} is now {new_status}.")
 
-    # 4. Push the automatic WhatsApp notification
-    message = (
-        f"🔔 *Order Update from AdaShop.24*\n\n"
-        f"Good news! Your order ({order_id_short}) is now: *{new_status}* "
-        f"{'🚛 It is on the way!' if new_status == 'Shipped' else '🎁 Enjoy your jewelry!'}"
-    )
+    # 4. Generate PDF and Push Notification
+    base_url = os.getenv("BASE_URL") # E.g., https://1a2b-3c4d.ngrok-free.app
+    media_attachment = None
+
+    if new_status == 'Shipped':
+        message = f"🔔 *Order Update*\n\nGreat news! Your order ({order_id_short}) is now: *Shipped* 🚛\nIt is on the way!"
+        
+    elif new_status == 'Delivered':
+        # Generate the PDF!
+        pdf_filename = generate_invoice(recent_order)
+        # Create the public Ngrok link to the PDF
+        media_attachment = f"{base_url}/invoices/{pdf_filename}"
+        
+        message = (
+            f"🎉 *Order Delivered!*\n\n"
+            f"Your order ({order_id_short}) has safely arrived. 🎁\n"
+            f"We have attached your official PDF invoice to this message.\n\n"
+            f"Enjoy your jewelry!"
+        )
     
     print("📲 Pushing WhatsApp notification...")
-    send_whatsapp_message(to=user_number, text=message)
+    # Twilio automatically recognizes the .pdf extension in the URL and sends it as a document!
+    send_whatsapp_message(to=user_number, text=message, image_url=media_attachment)
     print("✅ Done!\n")
 
 if __name__ == "__main__":
